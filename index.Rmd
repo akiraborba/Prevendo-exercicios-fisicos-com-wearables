@@ -1,0 +1,77 @@
+---
+title: "Predicting Exercise Type with Random Tress"
+author: "Arthur Luna - arthurlunabcf@outlook.com"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F, cache = T)
+```
+
+```{r echo = F}
+library(caret)
+library(doParallel)
+```
+
+## Downloading and selecting data
+
+The first step is to download the data for this project. Upon initial inspection, columns from 1 to 5 consisted of time data and name of participants. For this project, this is irrelevant, so those columns were ignored.
+
+```{r}
+initial.data <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",na.strings = c("", "" , "NA") )
+relevant.data <- initial.data[, -c(1:5)]
+relevant.data[, -c(1, 155)] <- as.numeric(unlist(relevant.data[, -c(1, 155)]))
+```
+
+## Creating a validation data
+Since we have a large data-base and a prediction algorithm to create, I will separet the data in two sets, one for training and one for validation. That way we can evaluate our model before submitting our test data answers.
+```{r}
+set.seed(666)
+in.training <- createDataPartition(relevant.data$classe, p = 0.7)[[1]]
+train.data <- relevant.data[in.training,]
+validation.data <- relevant.data[- in.training,]
+```
+
+## Filling NAs
+This data had many NAs, which can get in the way of the model. I will fix this using the median method. Although it is not necessarily the most precise, the amout of data we have requires an efficient solution.
+```{r}
+fill.data <- preProcess(train.data, method = "medianImpute", verbose = F)
+filled.data <- predict(fill.data, train.data)
+```
+
+## Programming Random Forests
+Our first model attempt will be a Random Forest one. I will also use parallel process for better use of computing capabilities of my PC. Also, for better performance, a k-fold of k=5 will the choice for the control train of the moel, also for better performance.
+```{r}
+corecluster <- makeCluster(detectCores() - 1)
+registerDoParallel(corecluster)
+train.fit <- trainControl(method = "cv", number = 5, allowParallel = T)
+rf.model <- train(classe ~., filled.data, method = "rf", trcontrol = train.fit)
+stopCluster(corecluster)
+```
+
+## Acessing modeling information
+We can check the accuracy of this model on our train data, as well as cheking for what are the most important variables.
+
+```{r}
+rf.model
+plot(varImp(rf.model), top = 20)
+```
+
+## Evaluating the Validation data
+As a last step, I will check the performance of this model on the validation data.
+```{r}
+filled.validation.data <- predict(fill.data, validation.data)
+validation.pred <- predict(rf.model, filled.validation.data)
+confusionMatrix(validation.pred, factor(filled.validation.data$classe))
+```
+
+## Final test
+With these excellent accuracy results, I feel confident to submit this model to the test data.
+```{r}
+test.data <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", na.strings = c("", "" , "NA"))
+relevant.test.data <- test.data[, -c(1:5)]
+relevant.test.data[, -c(1, 155)] <- as.numeric(unlist(relevant.test.data[, -c(1, 155)]))
+filled.test.data <- predict(fill.data, relevant.test.data)
+test.pred <- predict(rf.model, filled.test.data)
+```
+
